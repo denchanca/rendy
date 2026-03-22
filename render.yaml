@@ -99,3 +99,35 @@ services:
         value: ""
       - key: VITE_FLOWISE_STREAMING
         value: "true"
+
+  # Future option: scheduled ETL via Render cron job.
+  # This is closer to ready than a worker because the current ETL scripts are
+  # batch jobs that run once and exit.
+  #
+  # Before uncommenting:
+  # - configure the script's CONFIG block (or refactor it to read env vars cleanly)
+  # - set a real cron schedule
+  # - remember that Render cron jobs cannot attach persistent disks, so local
+  #   ledger files will not persist between runs
+  #
+  # JSON / JSONL ETL example:
+  # - type: cron
+  #   name: rendy-json-etl
+  #   runtime: python
+  #   plan: starter
+  #   region: oregon
+  #   repo: https://github.com/denchanca/rendy
+  #   rootDir: ETL/json-ETL
+  #   buildCommand: pip install openai pinecone pandas tqdm
+  #   startCommand: python json_to_pinecone.py
+  #   schedule: "0 3 * * *"
+  #   envVars:
+  #     - key: OPENAI_API_KEY
+  #       sync: false
+  #     - key: PINECONE_API_KEY
+  #       sync: false
+  #
+  # Sitemap ETL variant:
+  # - use `rootDir: ETL/sitemap-ETL`
+  # - use `buildCommand: pip install playwright openai pinecone tqdm && playwright install chromium`
+  # - use `startCommand: python sitemap.py`
