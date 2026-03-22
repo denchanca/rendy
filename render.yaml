@@ -1,0 +1,96 @@
+# Render Blueprint for Rendy.
+#
+# This Blueprint provisions:
+# - rendy-postgres: managed Postgres for Flowise
+# - rendy-orchestration: orchestration layer powered by Flowise
+# - rendy-web: the Vite/Express UI from this repository
+#
+# Flowise chatflow note:
+# - The UI now talks to Flowise through its own /api/flowise proxy.
+# - After the first deploy, create or import a chatflow in Flowise and then set
+#   VITE_FLOWISE_CHATFLOW_ID on rendy-web to that chatflow UUID.
+
+databases:
+  - name: rendy-postgres
+    databaseName: rendy
+    user: rendy_user
+    plan: basic-256mb
+    region: oregon
+
+services:
+  - type: web
+    name: rendy-orchestration
+    runtime: docker
+    plan: pro
+    region: oregon
+    repo: https://github.com/northstargpt/Flowise
+    healthCheckPath: /api/v1/ping
+    disk:
+      name: rendy-orchestration-data
+      mountPath: /opt/render/.flowise
+      sizeGB: 10
+    envVars:
+      - key: DATABASE_TYPE
+        value: postgres
+      - key: DATABASE_HOST
+        fromDatabase:
+          name: rendy-postgres
+          property: host
+      - key: DATABASE_PORT
+        fromDatabase:
+          name: rendy-postgres
+          property: port
+      - key: DATABASE_NAME
+        fromDatabase:
+          name: rendy-postgres
+          property: database
+      - key: DATABASE_USER
+        fromDatabase:
+          name: rendy-postgres
+          property: user
+      - key: DATABASE_PASSWORD
+        fromDatabase:
+          name: rendy-postgres
+          property: password
+      - key: DATABASE_SSL
+        value: "false"
+      - key: EXPRESS_SESSION_SECRET
+        generateValue: true
+      - key: JWT_AUTH_TOKEN_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_TOKEN_SECRET
+        generateValue: true
+      - key: TOKEN_HASH_SECRET
+        generateValue: true
+      - key: FLOWISE_SECRETKEY_OVERWRITE
+        generateValue: true
+      - key: SECRETKEY_PATH
+        value: /opt/render/.flowise
+      - key: LOG_PATH
+        value: /opt/render/.flowise/logs
+      - key: BLOB_STORAGE_PATH
+        value: /opt/render/.flowise/storage
+      - key: LOG_LEVEL
+        value: debug
+
+  - type: web
+    name: rendy-web
+    runtime: node
+    plan: starter
+    region: oregon
+    repo: https://github.com/denchanca/render
+    rootDir: UI/rendy_rt
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: FLOWISE_INTERNAL_HOSTPORT
+        fromService:
+          type: web
+          name: rendy-orchestration
+          property: hostport
+      - key: VITE_FLOWISE_PROXY_BASE
+        value: /api/flowise
+      - key: VITE_FLOWISE_CHATFLOW_ID
+        value: ""
+      - key: VITE_FLOWISE_STREAMING
+        value: "true"

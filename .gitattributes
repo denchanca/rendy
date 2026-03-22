@@ -1,0 +1,18 @@
+*.json filter=lfs diff=lfs merge=lfs -text
+ETL/WORKING/apify-ETL/dev.json filter=lfs diff=lfs merge=lfs -text
+
+# Allow standard Git text tracking for package manifests used in Vercel builds.
+UI/rendy_rt/package.json -filter -diff -merge text
+UI/rendy_rt/package-lock.json -filter -diff -merge text
+UI/rendy_rt/tsconfig.json -filter -diff -merge text
+UI/rendy_rt/tsconfig.app.json -filter -diff -merge text
+UI/rendy_rt/tsconfig.node.json -filter -diff -merge text
+UI/VERCEL/rendy_rt/package.json -filter -diff -merge text
+UI/VERCEL/rendy_rt/package-lock.json -filter -diff -merge text
+UI/VERCEL/rendy_rt/tsconfig.json -filter -diff -merge text
+UI/VERCEL/rendy_rt/tsconfig.app.json -filter -diff -merge text
+UI/VERCEL/rendy_rt/tsconfig.node.json -filter -diff -merge text
+# Treat every JSON file under the Vercel-ready apps as regular text so builds can read configs.
+UI/VERCEL/**/*.json -filter -diff -merge text
+/package.json -filter -diff -merge text
+/package-lock.json -filter -diff -merge text
