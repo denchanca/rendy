@@ -111,3 +111,23 @@ See [`ETL/README.md`](ETL/README.md) for current ETL details.
 - UI details: [`UI/rendy_rt/README.md`](UI/rendy_rt/README.md)
 - ETL details: [`ETL/README.md`](ETL/README.md)
 - Blueprint: [`render.yaml`](render.yaml)
+
+## Official Documentation
+
+### Flowise
+
+- [Flowise documentation home](https://docs.flowiseai.com/)
+- [Flowise API reference](https://docs.flowiseai.com/api-reference)
+- [Flowise integrations catalog](https://docs.flowiseai.com/integrations)
+
+### LangChain
+
+- [LangChain Python overview](https://docs.langchain.com/oss/python/langchain/overview)
+- [LangChain JavaScript / TypeScript overview](https://docs.langchain.com/oss/javascript/langchain/overview)
+- [LangChain Python reference](https://reference.langchain.com/?lang=python)
+
+### Render
+
+- [Render docs home](https://render.com/docs)
+- [Render Blueprint YAML reference](https://render.com/docs/blueprint-spec)
+- [Render native runtimes](https://render.com/docs/native-runtimes)
