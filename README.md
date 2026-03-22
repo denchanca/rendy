@@ -8,7 +8,7 @@ That matters because AI product work changes in layers. Frontend copy changes. P
 
 Render looks especially good here because it removes a lot of the glue work that usually slows AI teams down:
 
-- **Service separation without platform sprawl**: the UI, orchestration runtime, and database are separate services, but they still deploy from one Blueprint.
+- **Service separation without platform sprawl**: the UI, orchestration runtime, and database are separate Render Services, but they still deploy from one Blueprint.
 - **Private networking by default**: Flowise can stay behind the browser-facing app instead of being exposed directly to the public web.
 - **Infrastructure as code**: the working topology lives in [`render.yaml`](render.yaml), not only in a dashboard.
 - **Managed state**: Postgres is provisioned for you, and Flowise gets a persistent disk for logs, stored assets, and runtime state.
@@ -31,6 +31,16 @@ graph LR
     B --> C[rendy-orchestration / Flowise]
     C --> D[(rendy-postgres)]
 ```
+
+## Why Render Services Are The Right Abstraction
+
+For an AI product, Render Services line up cleanly with the actual responsibilities in the app:
+
+- the browser-facing service owns UX, sessions, and request proxying
+- the orchestration service owns prompts, tools, models, and workflow logic
+- the database service owns durable state
+
+That split is useful because AI apps rarely change all layers at once. Render lets you redeploy the layer you changed without pretending every prompt edit is a full platform event.
 
 ## What Render Already Wires For You
 
@@ -56,7 +66,7 @@ That means it is where you get:
 - model/tool/prompt orchestration separate from the browser UI
 - the LangChain / LlamaIndex / MCP / custom-tool integration surface that makes the assistant useful
 
-That separation is a big deal for AI dev. It means your app can treat orchestration as a proper service instead of as frontend-adjacent glue code.
+That separation is a big deal for AI dev. Inside Render, it means orchestration behaves like a real private backend service instead of frontend-adjacent glue code.
 
 ## Why This Repo Shape Speeds Up AI Iteration
 
@@ -74,7 +84,7 @@ That is a better fit for AI development than a monolith, because most changes ar
 2. Fork Flowise and point the `rendy-orchestration.repo` value in [`render.yaml`](render.yaml) at your Flowise fork.
 3. Review the `repo:` entries in [`render.yaml`](render.yaml) so `rendy-web` points at your repo and `rendy-orchestration` points at your Flowise fork.
 4. Deploy the Blueprint from [`render.yaml`](render.yaml).
-5. Open Flowise, complete first-run setup, and create the OpenAI/Postgres credentials you want to use inside the imported nodes.
+5. Open the `rendy-orchestration` service in Render, complete the Flowise first-run setup, and create the OpenAI/Postgres credentials you want to use inside the imported nodes.
 6. If you want pgvector in Postgres, enable it in the target database:
 
 ```sql
@@ -82,7 +92,7 @@ CREATE EXTENSION vector;
 ```
 
 7. Import [`chatflows/pgvector-template.json`](chatflows/pgvector-template.json) and [`chatflows/assistant-template.json`](chatflows/assistant-template.json).
-8. Copy the assistant chatflow ID into `VITE_FLOWISE_CHATFLOW_ID` on `rendy-web`.
+8. Set `VITE_FLOWISE_CHATFLOW_ID` on the `rendy-web` service in Render.
 9. Let Render redeploy `rendy-web`, then test the full browser path end to end.
 
 ## Day-To-Day Workflow
@@ -92,9 +102,10 @@ For this repo, the normal workflow should be thought of as service-level iterati
 - push a UI change to the branch connected to `rendy-web`
 - or change an env var on `rendy-web`
 - let Render rebuild and redeploy
+- review service logs, deploy output, and health in Render
 - test the deployed service, not only a local shell session
 
-That is especially useful for AI products because the deployed environment matters. Proxying, service-to-service networking, env vars, model credentials, and retrieval settings are part of the behavior you are validating.
+That is especially useful for AI products because the deployed environment matters. Proxying, service-to-service networking, env vars, model credentials, and retrieval settings are part of the behavior you are validating. Render makes those checks visible at the service level instead of leaving them scattered across ad hoc scripts and local assumptions.
 
 Local development is still available, but it is secondary here. The Render deployment path is the primary path. See [`UI/rendy_rt/README.md`](UI/rendy_rt/README.md) for the optional local workflow.
 
@@ -131,6 +142,12 @@ The nice part from a Render perspective is that this does not need to stay manua
 
 ## Official Documentation
 
+### Render
+
+- [Render docs home](https://render.com/docs)
+- [Render Blueprint YAML reference](https://render.com/docs/blueprint-spec)
+- [Render native runtimes](https://render.com/docs/native-runtimes)
+
 ### Flowise
 
 - [Flowise documentation home](https://docs.flowiseai.com/)
@@ -142,9 +159,3 @@ The nice part from a Render perspective is that this does not need to stay manua
 - [LangChain Python overview](https://docs.langchain.com/oss/python/langchain/overview)
 - [LangChain JavaScript / TypeScript overview](https://docs.langchain.com/oss/javascript/langchain/overview)
 - [LangChain Python reference](https://reference.langchain.com/?lang=python)
-
-### Render
-
-- [Render docs home](https://render.com/docs)
-- [Render Blueprint YAML reference](https://render.com/docs/blueprint-spec)
-- [Render native runtimes](https://render.com/docs/native-runtimes)
