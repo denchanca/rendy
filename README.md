@@ -17,7 +17,7 @@ That matters because AI product work changes in layers. Frontend copy changes. P
 
 ## Why This Repo Is Render-Centric
 
-This starter uses Flowise today, but it is not trying to make Flowise the platform story.
+This is an end-to-end Render Blueprint for deploying AI assistants, agents, agentic workflows, and more custom AI-powered applications with clear service boundaries.
 
 The real thing being demonstrated is Render's service model:
 
