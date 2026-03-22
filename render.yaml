@@ -2,7 +2,9 @@
 #
 # This Blueprint provisions:
 # - rendy-postgres: managed Postgres for Flowise
-# - rendy-orchestration: orchestration layer powered by Flowise
+# - rendy-orchestration: full Flowise orchestration server for API/CLI access,
+#   Python + TypeScript/Node SDK usage, Assistant/Chatflow/Agentflow builders,
+#   MCP/custom JS tools, and the broader integration catalog
 # - rendy-web: the Vite/Express UI from this repository
 #
 # Flowise chatflow note:
@@ -19,6 +21,9 @@ databases:
 
 services:
   - type: web
+    # Full Flowise runtime, not just a single chat endpoint.
+    # Users can work with it through the API, CLI, Python SDK, or TypeScript/Node SDK,
+    # and use Assistant / Chatflow / Agentflow plus MCP and custom JS tooling.
     name: rendy-orchestration
     runtime: docker
     plan: pro

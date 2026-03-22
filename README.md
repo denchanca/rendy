@@ -5,7 +5,7 @@ Rendy is a small multi-service starter for running a Flowise-backed assistant on
 ## Service Layout
 
 - `rendy-postgres` stores Flowise metadata and can also host your pgvector data if you want one database.
-- `rendy-orchestration` runs Flowise.
+- `rendy-orchestration` runs the full Flowise orchestration server, not just one chat endpoint.
 - `rendy-web` serves the React UI and proxies browser requests to Flowise over Render's private network.
 
 ```mermaid
@@ -14,6 +14,19 @@ graph LR
     B --> C[rendy-orchestration / Flowise]
     C --> D[(rendy-postgres)]
 ```
+
+## What `rendy-orchestration` Supports
+
+`rendy-orchestration` is the main Flowise runtime in this stack. It is the place where you get:
+
+- Access surfaces: Flowise HTTP API, Command Line Interface, Python SDK (`pip install flowise`), and TypeScript/Node SDK (`npm install flowise-sdk`)
+- Builders and runtime modes: Assistant, Chatflow, and Agentflow
+- Orchestration primitives: open-source and proprietary model support, expressions, custom code, branching, looping, routing, and complex workflow orchestration
+- Integration families: LangChain agents, cache, chains, chat models, document loaders, embeddings, LLMs, memory, moderation, output parsers, prompts, record managers, retrievers, text splitters, tools, and vector stores
+- Additional libraries and utilities: LlamaIndex agents, chat models, embeddings, engines, response synthesizers, tools, and vector stores; utilities like Custom JS Function, Set/Get Variable, If Else, Set Variable, and Sticky Note; external integrations like Zapier Zaps
+- Tooling extensions: MCP client/server support plus custom JS tools that can use built-in Node modules and supported external libraries
+
+That is why `rendy-web` is kept thin. The UI is only the browser-facing shell; the orchestration service is where the agent runtime, tools, SDK/API surface, and most integration logic live.
 
 ## What Lives Here
 
