@@ -78,7 +78,7 @@ services:
     runtime: node
     plan: starter
     region: oregon
-    repo: https://github.com/denchanca/render
+    repo: https://github.com/denchanca/rendy
     rootDir: UI/rendy_rt
     buildCommand: npm ci && npm run build
     startCommand: npm run start
