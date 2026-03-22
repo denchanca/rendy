@@ -16,17 +16,34 @@ This package is the React + TypeScript + Vite chat UI for Rendy. It also ships t
 
 Those versions come directly from [`package.json`](package.json).
 
-## Environment
+## Render-First Workflow
 
-Create `UI/rendy_rt/.env.local` for local work. `npm run dev` reads it through `node --env-file=.env.local server.js`.
+This UI is intended to be deployed as the `rendy-web` Render service. The normal workflow is:
 
-### Required for the default proxied setup
+1. Update code in [`UI/rendy_rt/`](.)
+2. Push the commit to the repo/branch connected to Render
+3. Or change env vars on the `rendy-web` service in Render
+4. Let Render rebuild and redeploy the service
+
+The Blueprint already configures Render to use:
+
+- `rootDir: UI/rendy_rt`
+- `buildCommand: npm ci && npm run build`
+- `startCommand: npm run start`
+
+In other words, most day-to-day UI changes should be thought of as Render deploys, not local shell sessions.
+
+## Render Environment
+
+On Render, configure these on the `rendy-web` service.
+
+### Required for the default proxied deployment
 
 ```bash
 VITE_FLOWISE_PROXY_BASE=/api/flowise
 VITE_FLOWISE_CHATFLOW_ID=<assistant-chatflow-id>
 VITE_FLOWISE_STREAMING=true
-FLOWISE_INTERNAL_HOSTPORT=localhost:3000
+FLOWISE_INTERNAL_HOSTPORT=<hostport from rendy-orchestration>
 ```
 
 ### Optional overrides
@@ -47,37 +64,21 @@ VITE_LLM_PROVIDER=OpenAI
 
 # Server-side JSON body limit for the Flowise proxy
 FLOWISE_PROXY_JSON_LIMIT=25mb
-
-# Only used by `vite preview` or raw Vite proxying, not by `npm run dev`
-FLOWISE_PROXY_TARGET=http://localhost:3000
 ```
 
-## Install And Run
+## What Triggers A New UI Deploy
 
-```bash
-cd UI/rendy_rt
-npm install
-npm run dev
-```
+- Push a commit to the branch linked to the Render service
+- Change env vars on the `rendy-web` service
+- Manually redeploy from Render if you need to rerun the same revision
 
-Default local port:
+That is the main operational path for this UI.
 
-- `npm run dev` listens on `PORT` or `5173`
-- `npm run start` listens on `PORT` or `4173`
+## Render Runtime Notes
 
-## Build And Serve
-
-```bash
-npm run build
-npm run preview
-npm run start
-```
-
-What those commands actually do:
-
-- `npm run build`: TypeScript build plus Vite production bundle
-- `npm run preview`: Vite preview server. Its `/api` proxy comes from [`vite.config.ts`](vite.config.ts), so it uses `FLOWISE_PROXY_TARGET`
-- `npm run start`: [`prod-server.js`](prod-server.js), which serves `dist/` and the Express `/api` routes in one process
+- `npm run start` runs [`prod-server.js`](prod-server.js), which serves `dist/` plus the Express `/api` routes.
+- The browser talks to `/api/flowise` on the same origin.
+- [`api/flowiseProxy.js`](api/flowiseProxy.js) forwards those requests to Flowise over Render's private network via `FLOWISE_INTERNAL_HOSTPORT`.
 
 ## Current UI Features
 
@@ -98,11 +99,39 @@ What those commands actually do:
 - [`src/App.css`](src/App.css): layout, theme, spacing, and responsive styling
 - [`public/`](public): logos and other static assets
 
+## Optional Local Development
+
+Local development is still available when you need to iterate outside Render.
+
+Create `UI/rendy_rt/.env.local`. `npm run dev` reads it through `node --env-file=.env.local server.js`.
+
+```bash
+VITE_FLOWISE_PROXY_BASE=/api/flowise
+VITE_FLOWISE_CHATFLOW_ID=<assistant-chatflow-id>
+VITE_FLOWISE_STREAMING=true
+FLOWISE_INTERNAL_HOSTPORT=localhost:3000
+```
+
+Then run:
+
+```bash
+cd UI/rendy_rt
+npm install
+npm run dev
+```
+
+Useful distinction:
+
+- `npm run dev` and `npm run start` use `FLOWISE_INTERNAL_HOSTPORT`
+- `vite preview` and the proxy config in [`vite.config.ts`](vite.config.ts) use `FLOWISE_PROXY_TARGET`, which defaults to `http://localhost:3000`
+- `npm run dev` listens on `PORT` or `5173`
+- `npm run start` listens on `PORT` or `4173`
+
 ## Troubleshooting
 
 | Issue | Likely Cause |
 | --- | --- |
-| `Flowise chatflow is not configured` | `VITE_FLOWISE_CHATFLOW_ID` is blank or the UI was not restarted/redeployed after setting it. |
+| `Flowise chatflow is not configured` | `VITE_FLOWISE_CHATFLOW_ID` is blank or the service was not redeployed after setting it. |
 | `Unable to reach Flowise prediction endpoint` | `FLOWISE_INTERNAL_HOSTPORT` is wrong, Flowise is down, or the private-network target is unreachable. |
 | `vite preview` works differently from `npm run dev` | They do not use the same proxy path. `vite preview` uses `FLOWISE_PROXY_TARGET`; `npm run dev` uses the Express proxy and `FLOWISE_INTERNAL_HOSTPORT`. |
 | Downloads fail or blank PDFs appear | Large markdown snapshots can take a moment; the PDF path renders off-screen HTML through `html2canvas` and `jsPDF`. |
