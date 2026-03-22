@@ -1,96 +1,60 @@
-> **Operational Note:** Rendy reports must pair Postgres SQL metrics with Research-Agent semantic context, and default views should exclude $0 renewals/opportunities unless explicitly requested. Keep both data sources synchronized in every workflow.
-
 # Rendy ETL Workbench
 
-All ingestion pipelines for this checkout of Rendy live here. The maintained flows currently target GitHub repositories, sitemap/URL inputs, and JSON exports (Apify-style), with `WORKING/` reserved for experiments.
+This checkout currently carries two maintained ETL pipelines, both aimed at Pinecone-backed retrieval. They are intentionally config-first scripts: edit the `CONFIG` block at the top of each file, then run the script directly.
 
-## Flow Overview
-```mermaid
-graph TD
-    subgraph Sources
-        GitHub[GitHub repos]
-        Sitemaps[Sitemaps / URL lists]
-        JSON[JSON exports]
-        Experiments[Prototype scripts]
-    end
+## Current Contents
 
-    subgraph Pipelines
-        RepoPipe[GITHUB-Pinecone/repo.py]
-        SitemapPipe[sitemap-ETL/sitemap.py]
-        ApifyPipe[apify-ETL/json_to_pinecone.py]
-        WorkingPipe[WORKING/*]
-    end
+| Path | Purpose | Output |
+| --- | --- | --- |
+| `json-ETL/` | JSON or JSONL `{url, text}` loader with chunking, ledgers, and optional sync-delete. | Pinecone vectors |
+| `sitemap-ETL/` | Playwright sitemap fetcher that extracts `<loc>` URLs and embeds the URL strings only. | Pinecone vectors |
+| `sitemap-ETL/.sitemap_to_pinecone.ledger.json` | Generated ledger that records the last sitemap run. | Local state |
 
-    GitHub --> RepoPipe
-    Sitemaps --> SitemapPipe
-    JSON --> ApifyPipe
-    Experiments --> WorkingPipe
+Detailed docs:
 
-    subgraph Stores
-        Pinecone[(Pinecone namespaces)]
-    end
+- [`json-ETL/README.md`](json-ETL/README.md)
+- [`sitemap-ETL/README.md`](sitemap-ETL/README.md)
 
-    RepoPipe --> Pinecone
-    SitemapPipe --> Pinecone
-    ApifyPipe --> Pinecone
-    WorkingPipe --> Pinecone
+## Shared Conventions
+
+- Edit the `CONFIG` block in each script before first run.
+- Both scripts write ledger files so reruns can skip unchanged work.
+- `text-embedding-3-large` requires a 3072-dimension index; `text-embedding-3-small` requires 1536.
+- `SYNC_DELETE_MISSING` can remove stale vectors. Turn it on only after you trust the source and namespace selection.
+- Namespaces are script-controlled. Make that decision before your first large ingest to avoid reindex churn.
+
+## Important Config Nuance
+
+The scripts only fall back to environment variables when the matching `CONFIG` entry is unset or `None`. The checked-in credential placeholders are ordinary strings, so the safest path is to edit the `CONFIG` block directly or clear those keys before relying on env vars.
+
+## Quick Start
+
+### JSON or JSONL to Pinecone
+
+```bash
+cd ETL/json-ETL
+python -m pip install openai pinecone pandas tqdm
+# edit CONFIG in json_to_pinecone.py
+python json_to_pinecone.py
 ```
 
-## Folder Index
-| Folder/File | Description | Outputs | Detailed README |
-| --- | --- | --- | --- |
-| `GITHUB-Pinecone/` | Tarball-first GitHub crawler with doc/code chunking and ledger support. | Pinecone vectors | `GITHUB-Pinecone/README.md` |
-| `sitemap-ETL/` | Playwright-based sitemap fetch + URL-only embedding pipeline. | Pinecone vectors | _(script docstring)_ |
-| `apify-ETL/` | JSON/JSONL `(url, text)` loader (`json_to_pinecone.py`). | Pinecone vectors | _(script docstring)_ |
-| `WORKING/` | Experimental variants (alternate GitHub flow and legacy sitemap loader). | Varies | `WORKING/README.md` |
-| `create_stg_opportunity_export.sql` | SQL helper for stage export shaping. | SQL | _(inline SQL comments)_ |
-| `stg_opportunity_export_columns.csv` | Column map companion for stage exports. | CSV | _(self-describing)_ |
-| `stream_column.py` | Utility helper for stream-style column handling. | Script utility | _(inline comments)_ |
-| `data-demo` | Placeholder for local demo data references. | Data stubs | _(none)_ |
+Use this when you already have exported content, crawler output, or a curated dataset shaped like `{url, text}`.
 
-## Shared Behavior & Conventions
-- **Config-first scripts**: current ETL scripts are primarily driven by in-file `CONFIG` dictionaries and environment fallbacks (not argparse-heavy CLIs).
-- **Embeddings and dimensions**: `text-embedding-3-large` (3072) and `text-embedding-3-small` (1536) are supported; keep Pinecone index dimensions aligned.
-- **Ledgers**: each flow writes a local ledger (`.json`) to skip unchanged content across reruns.
-- **Sync deletes**: `SYNC_DELETE_MISSING=True` prunes stale vectors from the target namespace.
-- **Namespace strategy**: each loader supports namespace modes (for example `single`, `per_repo`, or `by_host`) in `CONFIG`.
+### Sitemap URLs to Pinecone
 
-## Configuration Checklist
-1. Set `OPENAI_API_KEY` and `PINECONE_API_KEY` via environment variables or replace placeholder values in script `CONFIG`.
-2. Choose an index name and embedding model, then verify index dimensions match model output.
-3. Set source-specific inputs in each script (`REPOS`, `SITEMAPS`, or `JSON_PATH`).
-4. Install dependencies required by the specific pipeline before first run.
-5. For Playwright-based sitemap flows, run `playwright install chromium` once.
+```bash
+cd ETL/sitemap-ETL
+python -m pip install playwright openai pinecone tqdm
+playwright install chromium
+# edit CONFIG in sitemap.py
+python sitemap.py
+```
 
-## Quick Runbook Examples
-- **GitHub repos -> Pinecone**
-  ```bash
-  cd ETL/GITHUB-Pinecone
-  # edit CONFIG (REPOS, INDEX_NAME, NAMESPACE_MODE, keys)
-  python repo.py
-  ```
-- **Sitemap URLs -> Pinecone**
-  ```bash
-  cd ETL/sitemap-ETL
-  # edit CONFIG (SITEMAPS, INDEX_NAME, NAMESPACE_MODE, keys)
-  python sitemap.py
-  ```
-- **JSON/Apify export -> Pinecone**
-  ```bash
-  cd ETL/apify-ETL
-  # edit CONFIG (JSON_PATH, INDEX_NAME, NAMESPACE, keys)
-  python json_to_pinecone.py
-  ```
-- **Legacy/experimental variants**
-  ```bash
-  cd ETL/WORKING
-  # choose gh-ETL/repo.py or www-pinecone/sitemap.py and edit CONFIG first
-  ```
+Use this when you want sitemap discovery coverage or lightweight URL-level retrieval without crawling page bodies.
 
-## Operational Tips
-- Keep ledgers in persistent storage if running in ephemeral environments.
-- Remove hard-coded placeholder keys from scripts before sharing or committing changes.
-- Review include/exclude patterns and file-size limits to avoid indexing binaries.
-- Run small source samples first, then enable sync-delete once behavior is confirmed.
+## Operational Notes
 
-Move into the folder-specific README (or script docstring) for detailed options.
+- Ledger files are local state. Keep them if you want incremental reruns; delete them if you want to force a full re-evaluation.
+- The sitemap pipeline can read remote sitemap XML, local sitemap files, or a manual URL list.
+- The JSON pipeline can read JSON arrays, JSONL, or a JSON object that contains one list value.
+- Neither script currently exposes a full argparse CLI. Treat them as editable worker scripts, not packaged commands.
