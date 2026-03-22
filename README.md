@@ -28,7 +28,7 @@ For AI development specifically, that is a real productivity win. You spend less
 ```mermaid
 graph LR
     A[Browser] --> B[rendy-web]
-    B --> C[rendy-orchestration / Flowise]
+    B --> C[rendy-orchestration]
     C --> D[(rendy-postgres)]
 ```
 
