@@ -1310,7 +1310,6 @@ function App() {
 
   const handleRecentClick = (thread: RecentPrompt) => {
     const trimmedPrompt = thread.prompt.trim()
-    const providerLabel = normalizeProviderLabel(thread.provider)
     setComposer(trimmedPrompt)
     composerRef.current?.focus()
 
@@ -1318,7 +1317,7 @@ function App() {
     const userMessage: Message = {
       id: createMessageId(),
       role: 'user',
-      content: `${trimmedPrompt}\n\n(LLM: ${providerLabel})`,
+      content: trimmedPrompt,
       createdAt: timestamp,
     }
 
