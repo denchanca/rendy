@@ -3,38 +3,50 @@
 This guide walks through the two checked-in Flowise templates in the order you should use them:
 
 1. Import and configure `pgvector-template.json`
-2. Run an ingest into Postgres/pgvector
+2. Run an ingest into your chosen vector store
 3. Import and configure `assistant-template.json`
 4. Test the assistant in Flowise
 5. Point the Rendy UI at the assistant chatflow
+
+The checked-in templates use Flowise's `Postgres` vector store node with `pgvector`, a `Json File` loader, `OpenAI Embeddings`, and `ChatOpenAI` because that matches the default Rendy example. Those are template defaults, not required choices. You can swap to any Flowise-supported vector store, document loader/source, embeddings model, or LLM you want.
+
+If you customize the templates, keep the same overall contract: the ingest flow must write to the same corpus that the assistant flow retrieves from, both flows must use compatible embeddings, and the assistant LLM must support tool calling because this template uses a `Tool Agent` plus `Retriever Tool`.
 
 ## Prerequisites
 
 Before importing either template, make sure you have:
 
 - A working Flowise instance
-- A reachable Postgres database with the `vector` extension enabled
+- A reachable vector store backend
 - An OpenAI API key
+- Connection details for the vector store you plan to use
+- A document source your chosen loader can read
+
+For the checked-in templates specifically, that means:
+
+- A reachable Postgres database with the `vector` extension enabled
 - Postgres connection details:
   host, database, port, username, password, and SSL setting
 - A JSON dataset to ingest
 
 If you are using Render Postgres, use the managed database connection values that Render provides for the database service.
 
-## Step 1: Prepare Postgres
+## Step 1: Prepare The Checked-In Vector Store
 
-Enable `pgvector` in the target database if you have not already:
+If you are keeping the checked-in `Postgres` vector store node, enable `pgvector` in the target database if you have not already:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-The templates default to these table names:
+The checked-in templates default to these table names:
 
 - Vector table: `website`
 - Record manager table: `web_history`
 
 You can keep those names or change them, but if you change the vector table name you must update both templates.
+
+If you are using another vector store, do the equivalent setup for that backend instead and make sure both flows point at the same collection, namespace, or index.
 
 ## Step 2: Import `pgvector-template.json`
 
@@ -44,7 +56,7 @@ In Flowise, use the chatflow import action and import:
 chatflows/pgvector-template.json
 ```
 
-This template contains:
+This template contains the checked-in example nodes:
 
 - `Json File`
 - `Recursive Character Text Splitter`
@@ -54,6 +66,8 @@ This template contains:
 
 ## Step 3: Configure The Ingest Chatflow
 
+If you plan to keep the template structure but swap components, this is the step where you would replace `Json File`, `Postgres Record Manager`, or `Postgres` with the loader and vector-store nodes you actually want.
+
 ### `OpenAI Embeddings`
 
 Set:
@@ -61,9 +75,11 @@ Set:
 - `Connect Credential`: your OpenAI credential
 - `Model Name`: keep `text-embedding-3-small` unless you want a different embedding size
 
-The checked-in template uses `text-embedding-3-small`. If you change it, the assistant template must use the same embeddings family for retrieval against the same table.
+The checked-in template uses `text-embedding-3-small`. If you change it, the assistant template must use the same embeddings family and dimensions for retrieval against the same corpus.
 
 ### `Postgres Record Manager`
+
+This node is part of the checked-in Postgres example. If you switch vector stores, replace it with whatever record-manager or ingestion-tracking approach fits that backend, or remove it if your setup does not need one.
 
 Set:
 
@@ -100,7 +116,9 @@ This is the vector table that the assistant template must query later.
 
 ### `Json File`
 
-Upload your JSON file to the `Json File` node.
+`Json File` is just the checked-in loader example. You can replace it with any Flowise document loader or source node that emits documents for downstream chunking and embedding.
+
+If you keep the checked-in node, upload your JSON file to the `Json File` node.
 
 The checked-in template already enables:
 
@@ -154,11 +172,13 @@ The checked-in defaults are:
 
 Those are reasonable defaults for general text corpora. Change them only if your documents are unusually short, long, or highly structured.
 
+If you swap in another loader, make sure it still emits the document text and metadata your vector store and any record-manager node expect.
+
 ## Step 4: Run The Ingest Chatflow
 
-Save the chatflow and run it once against your uploaded JSON file.
+Save the chatflow and run it once against your chosen document source. In the checked-in example, that means the uploaded JSON file.
 
-After a successful run, your Postgres vector table should contain the embedded chunks, and the record manager table should contain write history.
+After a successful run, your vector store should contain the embedded chunks. In the checked-in example, the Postgres vector table should contain the chunks and the Postgres record-manager table should contain write history.
 
 If this step fails, do not configure the assistant until the ingest chatflow is working end to end.
 
@@ -170,7 +190,7 @@ In Flowise, import:
 chatflows/assistant-template.json
 ```
 
-This template contains:
+This template contains the checked-in example nodes:
 
 - `ChatOpenAI`
 - `OpenAI Embeddings`
@@ -194,6 +214,8 @@ Checked-in defaults:
 - `Temperature`: `0.2`
 - `Streaming`: enabled
 
+This is just the default template choice. You can replace it with another model or provider, but for this assistant flow the LLM must support tool calling. Without tool calling, the `Tool Agent` cannot invoke the `Retriever Tool`.
+
 ### `OpenAI Embeddings`
 
 Set:
@@ -201,9 +223,11 @@ Set:
 - `Connect Credential`: your OpenAI credential
 - `Model Name`: the same embedding model used by the ingest chatflow
 
-The default is `text-embedding-3-small`. Keep it aligned with the ingest flow.
+The default is `text-embedding-3-small`. This is just the checked-in template choice. You can change it, but keep it aligned with the ingest flow on the same embeddings family and dimensions.
 
 ### `Postgres`
+
+This node is the checked-in retriever backend. If you switch vector stores, replace it with the matching vector-store or retriever node for the corpus you ingested.
 
 Set:
 
@@ -214,7 +238,7 @@ Set:
 - `SSL`
 - `Table Name`: the same vector table used by ingest, `website` by default
 
-This node must point at the exact same vectorized corpus created by `pgvector-template.json`.
+This node must point at the exact same vectorized corpus created by the ingest flow.
 
 ### `Retriever Tool`
 
@@ -240,7 +264,7 @@ The checked-in template leaves `Session Id` blank and keeps:
 
 - `Memory Key`: `chat_history`
 
-That is fine. Flowise's `Buffer Memory` stores conversation history in Flowise's own `chat_message` table. It is separate from your Postgres vector table.
+That is fine. Flowise's `Buffer Memory` stores conversation history in Flowise's own `chat_message` table. It is separate from your retrieval corpus and vector store.
 
 ### `Tool Agent`
 
@@ -265,10 +289,11 @@ Recommended checks:
 
 If answers are weak, the usual causes are:
 
-- The assistant is pointed at the wrong Postgres table
+- The assistant is pointed at the wrong vector store target
 - The ingest and assistant flows use different embeddings models
+- The selected LLM does not support tool calling
 - The Retriever Tool name/description is too vague
-- The JSON loader did not extract the intended text field
+- The document loader did not extract the intended text field
 
 ## Step 8: Connect The Rendy UI
 
@@ -286,16 +311,18 @@ This repo's UI calls Flowise through the same-origin proxy in `UI/rendy_rt/api/f
 
 Check:
 
-- Both templates use the same `Host`, `Database`, `Port`, `SSL`, and vector `Table Name`
+- Both templates use the same vector store target
+- For the checked-in Postgres example, both templates use the same `Host`, `Database`, `Port`, `SSL`, and vector `Table Name`
 - Both templates use the same embeddings model
-- Your JSON loader extracted the intended text into documents
+- The assistant LLM supports tool calling
+- Your document loader extracted the intended text into documents
 
 ### Record Manager Cleanup Does Not Behave The Way You Expect
 
 Check:
 
 - `SourceId Key` is still `source`
-- The `Json File` node is actually emitting `source` metadata
+- The checked-in `Json File` node is actually emitting `source` metadata
 
 If not, set `Additional Metadata` like:
 
@@ -308,7 +335,15 @@ If not, set `Additional Metadata` like:
 
 ### Dimension Mismatch Or Retrieval Errors After Changing Models
 
-If you change embeddings model families or dimensions, re-ingest the corpus before testing the assistant against the same table.
+If you change embeddings model families or dimensions, re-ingest the corpus before testing the assistant against the same retrieval target.
+
+### The Assistant Never Calls The Retriever Tool
+
+Check:
+
+- The selected LLM supports tool calling
+- You did not replace the `Tool Agent` with an agent or chain that cannot call tools
+- The `Retriever Tool` name and description are specific enough for the model to know when to use it
 
 ### Conversation History Does Not Feel Sticky
 
@@ -329,6 +364,8 @@ Important repo-specific note:
 - if you protect the chatflow, you must update the proxy or call Flowise through a path that includes the correct authorization header
 
 ## Official Flowise Docs
+
+If you swap loaders or vector stores, use the Flowise docs for the specific nodes you choose in place of the checked-in `Json File` and `Postgres` nodes.
 
 - [Json File](https://docs.flowiseai.com/integrations/langchain/document-loaders/json-file)
 - [Postgres vector store](https://docs.flowiseai.com/integrations/langchain/vector-stores/postgres)
