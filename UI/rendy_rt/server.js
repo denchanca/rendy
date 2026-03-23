@@ -22,7 +22,7 @@ async function createServer() {
 
   const port = Number(process.env.PORT || 5173)
   app.listen(port, () => {
-    console.log(`HashiCorp Rendy dev server listening on http://localhost:${port}`)
+    console.log(`Render Rendy dev server listening on http://localhost:${port}`)
   })
 }
 

@@ -101,26 +101,6 @@ router.post('/prediction', express.json({ limit: DEFAULT_JSON_LIMIT }), async (r
   }
 })
 
-router.post('/feedback', express.json({ limit: '1mb' }), async (req, res) => {
-  const chatflowId = getConfiguredChatflowId()
-  if (!chatflowId) {
-    res.status(503).json({ error: FLOWISE_CHATFLOW_ERROR })
-    return
-  }
-
-  const payload =
-    req.body && typeof req.body === 'object'
-      ? { ...req.body, chatflowid: req.body.chatflowid ?? chatflowId }
-      : { chatflowid: chatflowId }
-
-  try {
-    await proxyJsonRequest(req, res, '/api/v1/feedback', payload)
-  } catch (error) {
-    console.error('Flowise feedback proxy failed.', error)
-    res.status(502).json({ error: 'Unable to reach Flowise feedback endpoint.' })
-  }
-})
-
 router.get('/get-upload-file', async (req, res) => {
   const searchParams = new URLSearchParams()
   appendQueryParams(searchParams, req.query)

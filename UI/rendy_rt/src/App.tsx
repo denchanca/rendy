@@ -26,8 +26,6 @@ import './App.css'
 import {
   ClipboardIcon,
   DownloadIcon,
-  ThumbsDownIcon,
-  ThumbsUpIcon,
 } from './icons'
 import { useRecentPrompts } from './hooks/useRecentPrompts'
 import { useChatSession } from './hooks/useChatSession'
@@ -97,34 +95,6 @@ type OpenAIStatusSummaryResponse = {
   }
   components?: OpenAIStatusComponent[]
 }
-
-const deriveFeedbackUrl = (apiUrl: string) => {
-  try {
-    const url = new URL(apiUrl)
-    const segments = url.pathname.split('/').filter(Boolean)
-    const predictionIndex = segments.lastIndexOf('prediction')
-
-    if (predictionIndex !== -1) {
-      const baseSegments = segments.slice(0, predictionIndex)
-      url.pathname = `/${baseSegments.join('/')}/feedback`
-    } else {
-      url.pathname = `${url.pathname.replace(/\/$/, '')}/feedback`
-    }
-
-    url.search = ''
-    url.hash = ''
-    return url.toString()
-  } catch {
-    return apiUrl.replace(/\/prediction\/[^/]+$/, '') + '/feedback'
-  }
-}
-
-const FEEDBACK_URL =
-  import.meta.env.VITE_FLOWISE_FEEDBACK_URL && import.meta.env.VITE_FLOWISE_FEEDBACK_URL.trim().length > 0
-    ? import.meta.env.VITE_FLOWISE_FEEDBACK_URL
-    : FLOWISE_DIRECT_API_URL
-      ? deriveFeedbackUrl(RENDY_API_URL)
-      : `${FLOWISE_PROXY_BASE}/feedback`
 const CHATFLOW_ID = (() => {
   const configuredId =
     typeof import.meta.env.VITE_FLOWISE_CHATFLOW_ID === 'string' ? import.meta.env.VITE_FLOWISE_CHATFLOW_ID.trim() : ''
@@ -1023,8 +993,6 @@ function App() {
         chatId: meta.chatId ?? message.chatId,
         chatMessageId: meta.chatMessageId ?? message.chatMessageId,
         sessionId: meta.sessionId ?? message.sessionId,
-        feedback: null,
-        feedbackSubmitting: false,
       }))
       return normalized
     }
@@ -1275,8 +1243,6 @@ function App() {
         content: fallback,
         citations: undefined,
         createdAt: Date.now(),
-        feedback: null,
-        feedbackSubmitting: false,
       }))
       setRecentPrompts((prev) =>
         prev.map((entry) =>
@@ -1553,56 +1519,6 @@ function App() {
     abortControllerRef.current.abort()
   }
 
-  const handleFeedback = async (message: Message, rating: 'THUMBS_UP' | 'THUMBS_DOWN') => {
-    const activeChatMeta = ensureSessionMeta()
-    const activeChatId = message.chatId ?? activeChatMeta.chatId
-    if (!activeChatId || !message.chatMessageId || !CHATFLOW_ID) {
-      setError('Feedback metadata is unavailable for this response.')
-      return
-    }
-
-    setMessages((prev) =>
-      prev.map((entry) =>
-        entry.id === message.id ? { ...entry, feedbackSubmitting: true, feedback: rating } : entry,
-      ),
-    )
-
-    try {
-      const response = await fetch(FEEDBACK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        mode: 'cors',
-        body: JSON.stringify({
-          chatflowid: CHATFLOW_ID,
-          chatId: activeChatId,
-          messageId: message.chatMessageId,
-          rating,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Flowise feedback endpoint returned ${response.status}`)
-      }
-    } catch (feedbackError) {
-      console.error(feedbackError)
-      setError(feedbackError instanceof Error ? feedbackError.message : 'Unable to submit feedback.')
-      setMessages((prev) =>
-        prev.map((entry) =>
-          entry.id === message.id ? { ...entry, feedbackSubmitting: false, feedback: null } : entry,
-        ),
-      )
-      return
-    }
-
-    setMessages((prev) =>
-      prev.map((entry) =>
-        entry.id === message.id ? { ...entry, feedbackSubmitting: false, feedback: rating } : entry,
-      ),
-    )
-  }
-
   const resetThread = () => {
     abortControllerRef.current?.abort()
     stopRequestedRef.current = false
@@ -1870,37 +1786,6 @@ function App() {
                       </div>
                     </div>
                   )}
-
-                  {message.role === 'assistant' &&
-                    !message.loading &&
-                    !isInitialGreeting &&
-                    message.chatId &&
-                    message.chatMessageId && (
-                      <>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          data-active={message.feedback === 'THUMBS_UP'}
-                          disabled={message.feedbackSubmitting}
-                          aria-label="Thumbs up"
-                          onClick={() => void handleFeedback(message, 'THUMBS_UP')}
-                          data-variant="positive"
-                        >
-                          <ThumbsUpIcon color={message.feedback === 'THUMBS_UP' ? '#C6FF7F' : undefined} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          data-active={message.feedback === 'THUMBS_DOWN'}
-                          disabled={message.feedbackSubmitting}
-                          aria-label="Thumbs down"
-                          onClick={() => void handleFeedback(message, 'THUMBS_DOWN')}
-                          data-variant="negative"
-                        >
-                          <ThumbsDownIcon color={message.feedback === 'THUMBS_DOWN' ? '#FF7B7B' : undefined} />
-                        </button>
-                      </>
-                    )}
                 </div>
               </article>
             )

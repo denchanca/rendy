@@ -19,8 +19,6 @@ export interface Message {
   chatId?: string
   chatMessageId?: string
   sessionId?: string
-  feedback?: 'THUMBS_UP' | 'THUMBS_DOWN' | null
-  feedbackSubmitting?: boolean
 }
 
 export interface RecentPrompt {

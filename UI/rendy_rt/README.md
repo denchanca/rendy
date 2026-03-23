@@ -6,8 +6,8 @@ This package is the React + TypeScript + Vite chat UI for Rendy. It also ships t
 
 - [`server.js`](server.js): development entrypoint. Starts Express, mounts `/api`, and runs Vite in middleware mode.
 - [`prod-server.js`](prod-server.js): production entrypoint. Serves `dist/` plus the same `/api` routes.
-- [`api/flowiseProxy.js`](api/flowiseProxy.js): proxies Flowise prediction, feedback, and upload-file requests.
-- [`src/App.tsx`](src/App.tsx): main chat UI, downloads, citations, artifacts, feedback, attachments, and recent-chat state.
+- [`api/flowiseProxy.js`](api/flowiseProxy.js): proxies Flowise prediction and upload-file requests.
+- [`src/App.tsx`](src/App.tsx): main chat UI, downloads, citations, artifacts, and recent-chat state.
 
 ## Requirements
 
@@ -53,9 +53,6 @@ FLOWISE_INTERNAL_HOSTPORT=<hostport from rendy-orchestration>
 # When set, predictions bypass the Express proxy.
 VITE_FLOWISE_API_URL=http://localhost:3000/api/v1/prediction/<chatflow-id>
 
-# Optional direct feedback override
-VITE_FLOWISE_FEEDBACK_URL=http://localhost:3000/api/v1/feedback
-
 # Comma-separated component names used when filtering the OpenAI status summary
 VITE_OPENAI_API_COMPONENTS=Chat Completions,Responses,Embeddings,Files,Fine-tuning,Moderations,Batch
 
@@ -82,15 +79,13 @@ That is the main operational path for this UI.
 
 ## Current UI Features
 
-- Same-origin Flowise proxy for prediction, feedback, and uploaded-file retrieval
+- Same-origin Flowise proxy for prediction and uploaded-file retrieval
 - Streaming responses with a stop button
 - Suggestion cards and left-rail shortcuts defined in [`src/App.tsx`](src/App.tsx)
 - Recent chat history stored in browser `localStorage`
 - Chat/session persistence keyed by chatflow ID
-- Attachments in the composer: up to 4 files, 2 MB each
 - Citations, artifacts, and agent-reasoning panels when Flowise returns them
 - Response downloads and full-thread downloads as `.txt`, `.md`, `.rtf`, and `.pdf`
-- Thumbs-up/thumbs-down feedback for assistant messages with Flowise metadata
 - A top-right status chip that polls the OpenAI status summary API, even though the visible label text currently reads `Render API`
 
 ## Files Worth Editing First
