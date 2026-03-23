@@ -16,7 +16,6 @@ import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import type {
   AgentReasoningEntry,
-  Attachment,
   Citation,
   FlowiseArtifact,
   FlowiseResponse,
@@ -27,7 +26,6 @@ import './App.css'
 import {
   ClipboardIcon,
   DownloadIcon,
-  PaperclipIcon,
   ThumbsDownIcon,
   ThumbsUpIcon,
 } from './icons'
@@ -636,9 +634,6 @@ const extractResponseMeta = (
   return meta
 }
 
-const maxAttachmentSizeBytes = 2 * 1024 * 1024
-const maxAttachments = 4
-
 const getAllDocuments = (payload?: FlowiseResponse | FlowiseResponse[]): FlowiseResponse['sourceDocuments'] => {
   if (!payload) return []
 
@@ -807,7 +802,6 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const { recents, savePrompt, deletePrompt: deleteRecentPrompt } = useRecentPrompts()
   const [recentPrompts, setRecentPrompts] = useState<RecentPrompt[]>([])
-  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [openAIStatus, setOpenAIStatus] = useState<OpenAIStatusState>({
     indicator: 'unknown',
     description: 'Checking API…',
@@ -819,7 +813,6 @@ function App() {
   )
   const streamAnchorRef = useRef<HTMLDivElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const stopRequestedRef = useRef(false)
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
@@ -1049,34 +1042,12 @@ function App() {
         ),
       )
       void savePrompt(prompt, finalAnswer, providerLabel)
-      setAttachments([])
       setIsLoading(false)
       return
     }
 
-    const attachmentContext =
-      attachments.length > 0
-        ? `\n\nAttachments:\n${attachments
-            .map(
-              (file, index) =>
-                `${index + 1}. ${file.name} (${file.type || 'unknown'}, ${Math.round(
-                  file.size / 1024,
-                )}KB)\nData URL (base64): ${file.dataUrl}`,
-            )
-            .join('\n\n')}`
-        : ''
-
-    const questionWithAttachments = `${prompt}${attachmentContext}`
-
     const payload: Record<string, unknown> = {
-      question: questionWithAttachments,
-      attachments: attachments.map(({ id, name, size, type, dataUrl }) => ({
-        id,
-        name,
-        size,
-        type,
-        dataUrl,
-      })),
+      question: prompt,
     }
 
     payload.chatId = sessionMeta.chatId
@@ -1316,7 +1287,6 @@ function App() {
       )
       void savePrompt(prompt, fallback, providerLabel)
     } finally {
-      setAttachments([])
       setIsLoading(false)
       setIsStreamingResponse(false)
       abortControllerRef.current = null
@@ -1415,57 +1385,6 @@ function App() {
       event.preventDefault()
     }
     removeRecentEntry(id)
-  }
-
-  const handleAttachmentButton = () => {
-    fileInputRef.current?.click()
-  }
-
-  const handleAttachmentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files
-    if (!files || files.length === 0) return
-
-    const existing = attachments.length
-    if (existing >= maxAttachments) {
-      setError(`Maximum of ${maxAttachments} attachments reached.`)
-      event.target.value = ''
-      return
-    }
-
-    const allowedSlots = maxAttachments - existing
-    const selection = Array.from(files).slice(0, allowedSlots)
-
-    selection.forEach((file) => {
-      if (file.size > maxAttachmentSizeBytes) {
-        setError(`"${file.name}" exceeds ${(maxAttachmentSizeBytes / (1024 * 1024)).toFixed(1)}MB limit.`)
-        return
-      }
-
-      const reader = new FileReader()
-      reader.onload = () => {
-        const dataUrl = typeof reader.result === 'string' ? reader.result : ''
-        setAttachments((prev) => [
-          ...prev,
-          {
-            id: createMessageId(),
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            dataUrl,
-          },
-        ])
-      }
-      reader.onerror = () => {
-        setError(`Failed to read "${file.name}".`)
-      }
-      reader.readAsDataURL(file)
-    })
-
-    event.target.value = ''
-  }
-
-  const removeAttachment = (id: string) => {
-    setAttachments((prev) => prev.filter((item) => item.id !== id))
   }
 
   const handleCopy = async (message: Message) => {
@@ -1694,7 +1613,6 @@ function App() {
     setComposer('')
     setComposerHistory([])
     setComposerHistoryIndex(null)
-    setAttachments([])
     setError(null)
     resetSessionMeta()
   }
@@ -2000,41 +1918,6 @@ function App() {
               onKeyDown={handleComposerKeyDown}
               rows={3}
             />
-            <div className="attachment-toolbar">
-              <button
-                type="button"
-                className="attach-button"
-                onClick={handleAttachmentButton}
-                disabled={isLoading}
-                aria-label="Attach file"
-              >
-                <PaperclipIcon />
-                <span className="attach-label">Attach file</span>
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                hidden
-                onChange={handleAttachmentChange}
-                accept=".pdf,.txt,.csv,.doc,.docx,.ppt,.pptx,.xls,.xlsx,image/*"
-              />
-              <span className="attachment-note">
-                Up to {maxAttachments} files · {(maxAttachmentSizeBytes / (1024 * 1024)).toFixed(1)}MB each
-              </span>
-            </div>
-            {attachments.length > 0 && (
-              <div className="attachment-list">
-                {attachments.map((file) => (
-                  <span key={file.id} className="attachment-chip">
-                    <span>{file.name}</span>
-                    <button type="button" onClick={() => removeAttachment(file.id)} aria-label="Remove attachment">
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
             <div className="composer-actions">
               <div className="composer-meta">
                 <div className="composer-hint">

@@ -994,80 +994,6 @@
   outline: none;
 }
 
-.attachment-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-}
-
-.attach-button {
-  all: unset;
-  cursor: pointer;
-  padding: 0.35rem 0.9rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.06);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  font-weight: 600;
-  transition: background 150ms, border-color 150ms, transform 150ms;
-}
-
-.attach-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.attach-button svg {
-  width: 18px;
-  height: 18px;
-  margin-right: 0.1rem;
-}
-
-.attach-button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.25);
-  transform: translateY(-1px);
-}
-
-.attach-label {
-  color: #f7f8fb;
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
-.attachment-note {
-  color: var(--text-dim);
-}
-
-.attachment-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.attachment-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  border-radius: 999px;
-  padding: 0.3rem 0.7rem;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 0.85rem;
-}
-
-.attachment-chip button {
-  all: unset;
-  cursor: pointer;
-  font-size: 1rem;
-  line-height: 1;
-}
-
 .composer-actions {
   display: flex;
   justify-content: space-between;
@@ -1484,15 +1410,5 @@
 
   .composer-hint {
     display: none;
-  }
-
-  .attach-label {
-    display: none;
-  }
-
-  .attach-button {
-    padding: 0.4rem;
-    border-radius: 12px;
-    gap: 0;
   }
 }

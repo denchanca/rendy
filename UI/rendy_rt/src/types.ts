@@ -31,14 +31,6 @@ export interface RecentPrompt {
   provider?: string | null
 }
 
-export interface Attachment {
-  id: string
-  name: string
-  size: number
-  type: string
-  dataUrl: string
-}
-
 export interface FlowiseDocument {
   pageContent?: string
   metadata?: Record<string, unknown>
