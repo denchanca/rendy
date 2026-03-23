@@ -8,6 +8,7 @@ That matters because AI product work changes in layers. Frontend copy changes. P
 
 ## What Works Now
 
+- end-to-end AI app deployed at `https://rendy-web-ltnn.onrender.com/`, running browser UI -> private Flowise orchestration -> managed Postgres / pgvector
 - browser-facing UI deployed as the `rendy-web` Render service
 - same-origin proxy from the UI to the private `rendy-orchestration` service
 - managed Postgres provisioned and wired through the Blueprint
