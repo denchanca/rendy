@@ -167,7 +167,9 @@ The nice part from a Render perspective is that this does not need to stay manua
 
 - [`render.yaml`](render.yaml): Render Blueprint and future cron scaffold
 - [`UI/rendy_rt/`](UI/rendy_rt): deployed UI service and orchestration proxy
-- [`chatflows/`](chatflows): starter ingestion and assistant flows for the current Flowise-based orchestration path
+- [`chatflows/`](chatflows): Flowise chatflow exports plus setup documentation for the current orchestration path
+- [`chatflows/README.md`](chatflows/README.md): quick reference for the included Flowise templates and how they fit together
+- [`chatflows/HOWTO.md`](chatflows/HOWTO.md): step-by-step guide for importing, configuring, and using the chatflow templates
 - [`ETL/`](ETL): JSON and sitemap ingestion helpers
 
 ## Official Documentation
