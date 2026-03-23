@@ -18,6 +18,17 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Local env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*service-account*.json
+*credentials*.json
+
 # Local temp files
 tmp/
 /tmp/
