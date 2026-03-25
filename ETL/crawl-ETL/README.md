@@ -41,6 +41,10 @@ python3 crawl_to_json.py
 - `INCLUDE_PATTERNS`, `EXCLUDE_PATTERNS`: control which URLs are eligible to crawl.
 - `STRIP_QUERY`, `NORMALIZE_TRAILING_SLASH`: reduce duplicate URL variants.
 - `MAX_PAGES`, `MAX_LINKS_PER_PAGE`: control crawl size.
+- `PAGE_DELAY_MS`, `PAGE_DELAY_JITTER_MS`: add per-host spacing and jitter between page and fallback resource requests.
+- `RESPECT_RETRY_AFTER`, `RATE_LIMIT_COOLDOWN_MS`: back off when the site responds with `429` or `503`, honoring `Retry-After` when present.
+- `RESPECT_ROBOTS_TXT`, `ROBOTS_USER_AGENT`, `HONOR_ROBOTS_CRAWL_DELAY`: obey `robots.txt` allow/disallow rules and optional crawl-delay.
+- `CACHE_EXTERNAL_RESOURCES`: reuse external JS/CSS bodies across pages so the crawler does not re-download the same bundles repeatedly.
 - `CAPTURE_VISIBLE_TEXT`, `CAPTURE_HIDDEN_TEXT`: control DOM text capture.
 - `CAPTURE_INLINE_SCRIPTS`, `CAPTURE_EXTERNAL_SCRIPTS`: control JavaScript capture.
 - `CAPTURE_INLINE_STYLES`, `CAPTURE_EXTERNAL_STYLES`: control stylesheet capture.
@@ -66,5 +70,7 @@ Additional fields such as `title`, `visible_text`, `hidden_text`, `inline_script
 ## Notes
 
 - This crawler uses Playwright and is intended for rendered pages where content lives in the DOM, scripts, or stylesheets after client-side execution.
+- The crawler is intentionally conservative by default: it runs serially, spaces requests per host, honors `robots.txt`, and cools down when rate-limited.
+- Shared external-resource caching cuts repeat fetches for large site-wide JS/CSS bundles, which helps both crawl speed and throttling risk on multi-page crawls.
 - Comprehensive captures can get large quickly, especially on sites with large bundled JS and CSS files. Use the character-limit config entries if needed.
 - The output is compatible with [`../json-ETL/json_to_pinecone.py`](../json-ETL/json_to_pinecone.py) as long as `URL_FIELD` remains `url` and `TEXT_FIELD` remains `text`.

@@ -34,6 +34,17 @@ CONFIG = {
     "MAX_PAGES": 100,              # number of saved page records
     "MAX_LINKS_PER_PAGE": 250,     # cap discovered links per page after filtering
 
+    # --- Crawl pacing / anti-throttling ---
+    "PAGE_DELAY_MS": 1200,         # minimum delay between page requests per host
+    "PAGE_DELAY_JITTER_MS": 400,   # extra random jitter per host request
+    "RATE_LIMIT_COOLDOWN_MS": 30000,  # fallback cooldown when 429/503 has no Retry-After
+    "RESPECT_RETRY_AFTER": True,
+    "RESPECT_ROBOTS_TXT": True,
+    "ROBOTS_USER_AGENT": "*",      # "*" is safest for generic crawl-delay rules
+    "HONOR_ROBOTS_CRAWL_DELAY": True,
+    "ROBOTS_TIMEOUT_MS": 10000,
+    "CACHE_EXTERNAL_RESOURCES": True,
+
     # --- Domain / URL controls ---
     "STAY_WITHIN_START_DOMAINS": True,
     "ALLOWED_DOMAINS": [],         # [] -> derive from START_URLS when STAY_WITHIN_START_DOMAINS=True
@@ -115,13 +126,17 @@ CONFIG = {
 
 import json
 import os
+import random
 import re
 import sys
 import time
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Sequence, Set, Tuple
+from urllib import robotparser
 from urllib.parse import urlparse, urlunparse
 
 from playwright.sync_api import Error as PlaywrightError
@@ -136,6 +151,7 @@ JS_CONTENT_TYPE_TOKENS = (
     "text/javascript1.",
 )
 CSS_CONTENT_TYPE_TOKENS = ("text/css", "css")
+RATE_LIMIT_STATUS_CODES = {429, 503}
 
 DOM_SNAPSHOT_SCRIPT = r"""
 () => {
@@ -305,11 +321,35 @@ class NonHtmlPageError(RuntimeError):
     pass
 
 
+class RobotsDeniedError(RuntimeError):
+    pass
+
+
+class RateLimitError(RuntimeError):
+    def __init__(self, url: str, status_code: int, retry_after_seconds: Optional[float] = None):
+        self.url = url
+        self.status_code = status_code
+        self.retry_after_seconds = retry_after_seconds
+
+        message = f"Rate limited on {url} with HTTP {status_code}"
+        if retry_after_seconds is not None:
+            message += f"; retry after {retry_after_seconds:.2f}s"
+        super().__init__(message)
+
+
 @dataclass
 class CrawlTask:
     url: str
     depth: int
     discovered_from: Optional[str] = None
+
+
+@dataclass
+class RobotsPolicy:
+    allow_all: bool
+    parser: Optional[robotparser.RobotFileParser] = None
+    crawl_delay_seconds: Optional[float] = None
+    robots_url: Optional[str] = None
 
 
 def get_conf(key: str, default=None):
@@ -349,6 +389,45 @@ def normalize_url(url: str, strip_query_override: Optional[bool] = None) -> str:
         fragment="",
     )
     return urlunparse(normalized)
+
+
+def throttle_key_for_url(url: str) -> str:
+    parsed = urlparse(url.strip())
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return ""
+    if parsed.port:
+        return f"{hostname}:{parsed.port}"
+    return hostname
+
+
+def origin_key_for_url(url: str) -> str:
+    parsed = urlparse(normalize_url(url, strip_query_override=False))
+    scheme = (parsed.scheme or "https").lower()
+    netloc = parsed.netloc.lower()
+    return f"{scheme}://{netloc}"
+
+
+def parse_retry_after_seconds(value: Optional[str]) -> Optional[float]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+
+    try:
+        return max(0.0, float(int(raw)))
+    except ValueError:
+        pass
+
+    try:
+        parsed = parsedate_to_datetime(raw)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+
+    delta = (parsed - datetime.now(timezone.utc)).total_seconds()
+    return max(0.0, delta)
 
 
 def derive_allowed_domains(start_urls: Sequence[str]) -> List[str]:
@@ -528,6 +607,12 @@ class PlaywrightCrawler:
         self.pw = None
         self.network_scripts: Dict[str, Dict[str, Any]] = {}
         self.network_styles: Dict[str, Dict[str, Any]] = {}
+        self.external_script_cache: Dict[str, Dict[str, Any]] = {}
+        self.external_style_cache: Dict[str, Dict[str, Any]] = {}
+        self.host_next_allowed_at: Dict[str, float] = {}
+        self.robots_policies: Dict[str, RobotsPolicy] = {}
+        self.random = random.Random()
+        self.rate_limit_hits = 0
 
     def __enter__(self) -> "PlaywrightCrawler":
         self.pw = sync_playwright().start()
@@ -561,6 +646,129 @@ class PlaywrightCrawler:
             if self.pw is not None:
                 self.pw.stop()
 
+    def _robots_user_agent(self) -> str:
+        configured = str(get_conf("ROBOTS_USER_AGENT", "*") or "*").strip()
+        return configured or "*"
+
+    def _page_delay_seconds(self) -> float:
+        return max(0, int(get_conf("PAGE_DELAY_MS", 0))) / 1000.0
+
+    def _page_delay_jitter_seconds(self) -> float:
+        return max(0, int(get_conf("PAGE_DELAY_JITTER_MS", 0))) / 1000.0
+
+    def _fallback_cooldown_seconds(self) -> float:
+        return max(0, int(get_conf("RATE_LIMIT_COOLDOWN_MS", 30000))) / 1000.0
+
+    def _wait_for_host_slot(self, url: str, crawl_delay_seconds: Optional[float] = None) -> None:
+        host_key = throttle_key_for_url(url)
+        if not host_key:
+            return
+
+        now = time.monotonic()
+        next_allowed = self.host_next_allowed_at.get(host_key, 0.0)
+        if next_allowed > now:
+            sleep_for = next_allowed - now
+            debug(f"Sleeping {sleep_for:.2f}s before requesting {url}")
+            time.sleep(sleep_for)
+
+        delay_seconds = self._page_delay_seconds()
+        jitter_seconds = self._page_delay_jitter_seconds()
+        if jitter_seconds > 0:
+            delay_seconds += self.random.uniform(0, jitter_seconds)
+        if crawl_delay_seconds is not None:
+            delay_seconds = max(delay_seconds, max(0.0, float(crawl_delay_seconds)))
+
+        self.host_next_allowed_at[host_key] = time.monotonic() + delay_seconds
+
+    def _apply_host_cooldown(self, url: str, delay_seconds: Optional[float]) -> None:
+        host_key = throttle_key_for_url(url)
+        if not host_key:
+            return
+
+        cooldown_seconds = self._fallback_cooldown_seconds()
+        if delay_seconds is not None and delay_seconds > 0:
+            cooldown_seconds = max(cooldown_seconds, float(delay_seconds))
+
+        next_allowed = time.monotonic() + cooldown_seconds
+        self.host_next_allowed_at[host_key] = max(self.host_next_allowed_at.get(host_key, 0.0), next_allowed)
+        debug(f"Cooling down host {host_key} for {cooldown_seconds:.2f}s")
+
+    def _resolve_retry_after(self, headers: Dict[str, str]) -> Optional[float]:
+        if not get_conf("RESPECT_RETRY_AFTER", True):
+            return None
+        return parse_retry_after_seconds(headers.get("retry-after"))
+
+    def _get_robots_policy(self, url: str) -> RobotsPolicy:
+        if not get_conf("RESPECT_ROBOTS_TXT", True):
+            return RobotsPolicy(allow_all=True)
+
+        origin = origin_key_for_url(url)
+        cached = self.robots_policies.get(origin)
+        if cached is not None:
+            return cached
+
+        robots_url = f"{origin}/robots.txt"
+        timeout_ms = int(get_conf("ROBOTS_TIMEOUT_MS", 10000))
+        policy: RobotsPolicy
+
+        try:
+            self._wait_for_host_slot(robots_url)
+            response = self.context.request.get(robots_url, timeout=timeout_ms)
+            headers = {str(k).lower(): str(v) for k, v in (response.headers or {}).items()}
+            self._maybe_note_rate_limit(robots_url, response.status, headers)
+            if response.status >= 400:
+                policy = RobotsPolicy(allow_all=True, robots_url=robots_url)
+            else:
+                parser = robotparser.RobotFileParser()
+                parser.set_url(robots_url)
+                parser.parse(response.text().splitlines())
+
+                crawl_delay = parser.crawl_delay(self._robots_user_agent())
+                if crawl_delay is None and self._robots_user_agent() != "*":
+                    crawl_delay = parser.crawl_delay("*")
+
+                policy = RobotsPolicy(
+                    allow_all=False,
+                    parser=parser,
+                    crawl_delay_seconds=float(crawl_delay) if crawl_delay is not None else None,
+                    robots_url=robots_url,
+                )
+        except Exception as exc:
+            debug(f"Unable to load robots.txt from {robots_url}: {exc}")
+            policy = RobotsPolicy(allow_all=True, robots_url=robots_url)
+
+        self.robots_policies[origin] = policy
+        return policy
+
+    def can_fetch_url(self, url: str) -> bool:
+        if not get_conf("RESPECT_ROBOTS_TXT", True):
+            return True
+
+        policy = self._get_robots_policy(url)
+        if policy.allow_all or policy.parser is None:
+            return True
+
+        try:
+            return bool(policy.parser.can_fetch(self._robots_user_agent(), url))
+        except Exception as exc:
+            debug(f"robots.txt can_fetch failed for {url}: {exc}")
+            return True
+
+    def crawl_delay_for_url(self, url: str) -> Optional[float]:
+        if not get_conf("RESPECT_ROBOTS_TXT", True):
+            return None
+        if not get_conf("HONOR_ROBOTS_CRAWL_DELAY", True):
+            return None
+
+        policy = self._get_robots_policy(url)
+        return policy.crawl_delay_seconds
+
+    def _maybe_note_rate_limit(self, url: str, status_code: int, headers: Dict[str, str]) -> None:
+        if status_code not in RATE_LIMIT_STATUS_CODES:
+            return
+        self.rate_limit_hits += 1
+        self._apply_host_cooldown(url, self._resolve_retry_after(headers))
+
     def _handle_response(self, response: Response) -> None:
         try:
             request = response.request
@@ -568,6 +776,8 @@ class PlaywrightCrawler:
             url = normalize_url(response.url, strip_query_override=False)
             headers = {str(k).lower(): str(v) for k, v in (response.headers or {}).items()}
             content_type = headers.get("content-type", "").lower()
+
+            self._maybe_note_rate_limit(url, response.status, headers)
 
             capture_as_script = (
                 resource_type == "script"
@@ -581,6 +791,18 @@ class PlaywrightCrawler:
             )
 
             if not capture_as_script and not capture_as_style:
+                return
+
+            cache_enabled = bool(get_conf("CACHE_EXTERNAL_RESOURCES", True))
+            if cache_enabled and capture_as_script and url in self.external_script_cache:
+                self.network_scripts[url] = self.external_script_cache[url]
+                if capture_as_style and url in self.external_style_cache:
+                    self.network_styles[url] = self.external_style_cache[url]
+                return
+            if cache_enabled and capture_as_style and url in self.external_style_cache:
+                self.network_styles[url] = self.external_style_cache[url]
+                if capture_as_script and url in self.external_script_cache:
+                    self.network_scripts[url] = self.external_script_cache[url]
                 return
 
             text = response.text()
@@ -600,8 +822,12 @@ class PlaywrightCrawler:
                 entry["truncated"] = True
 
             if capture_as_script:
+                if cache_enabled:
+                    self.external_script_cache[url] = entry
                 self.network_scripts[url] = entry
             if capture_as_style:
+                if cache_enabled:
+                    self.external_style_cache[url] = entry
                 self.network_styles[url] = entry
         except Exception as exc:
             debug("Unable to capture resource response:", response.url, exc)
@@ -632,6 +858,8 @@ class PlaywrightCrawler:
 
     def _fetch_missing_resources(self, urls: Sequence[str], resource_type: str) -> List[Dict[str, Any]]:
         existing = self.network_scripts if resource_type == "script" else self.network_styles
+        shared_cache = self.external_script_cache if resource_type == "script" else self.external_style_cache
+        cache_enabled = bool(get_conf("CACHE_EXTERNAL_RESOURCES", True))
         results = list(existing.values())
         timeout_ms = int(get_conf("PLAYWRIGHT_TIMEOUT_MS", 45000))
 
@@ -639,10 +867,18 @@ class PlaywrightCrawler:
             normalized_url = normalize_url(raw_url, strip_query_override=False)
             if normalized_url in existing:
                 continue
+            if cache_enabled and normalized_url in shared_cache:
+                existing[normalized_url] = shared_cache[normalized_url]
+                results.append(shared_cache[normalized_url])
+                continue
             try:
+                self._wait_for_host_slot(normalized_url)
                 response = self.page.request.get(normalized_url, timeout=timeout_ms)
                 headers = {str(k).lower(): str(v) for k, v in (response.headers or {}).items()}
                 content_type = headers.get("content-type", "").lower()
+                self._maybe_note_rate_limit(normalized_url, response.status, headers)
+                if response.status in RATE_LIMIT_STATUS_CODES:
+                    continue
                 text = response.text()
                 if not text or not text.strip():
                     continue
@@ -659,6 +895,8 @@ class PlaywrightCrawler:
                 if truncated:
                     entry["truncated"] = True
 
+                if cache_enabled:
+                    shared_cache[normalized_url] = entry
                 existing[normalized_url] = entry
                 results.append(entry)
             except Exception as exc:
@@ -677,14 +915,24 @@ class PlaywrightCrawler:
             self.network_scripts = {}
             self.network_styles = {}
             try:
+                if not self.can_fetch_url(url):
+                    raise RobotsDeniedError(f"Blocked by robots.txt: {url}")
+
+                self._wait_for_host_slot(url, crawl_delay_seconds=self.crawl_delay_for_url(url))
                 self._apply_cookie_for_url(url)
                 response = self.page.goto(url, wait_until=wait_until, timeout=timeout_ms)
                 if response is None:
                     raise RuntimeError(f"No navigation response for {url}")
+
+                response_headers = {str(k).lower(): str(v) for k, v in (response.headers or {}).items()}
+                if response.status in RATE_LIMIT_STATUS_CODES:
+                    retry_after_seconds = self._resolve_retry_after(response_headers)
+                    self._apply_host_cooldown(url, retry_after_seconds)
+                    raise RateLimitError(url, response.status, retry_after_seconds)
                 if response.status >= 400:
                     raise RuntimeError(f"Navigation returned HTTP {response.status} for {url}")
 
-                content_type = str((response.headers or {}).get("content-type", "")).lower()
+                content_type = str(response_headers.get("content-type", "")).lower()
                 if content_type and "text/html" not in content_type and "application/xhtml+xml" not in content_type:
                     raise NonHtmlPageError(f"Non-HTML page at {url}: {content_type}")
 
@@ -776,6 +1024,13 @@ class PlaywrightCrawler:
                 return payload
             except NonHtmlPageError:
                 raise
+            except RobotsDeniedError:
+                raise
+            except RateLimitError as exc:
+                last_error = exc
+                if attempt >= max_retries:
+                    break
+                print(f"[WARN] {exc}")
             except Exception as exc:
                 last_error = exc
                 if attempt >= max_retries:
@@ -783,6 +1038,8 @@ class PlaywrightCrawler:
                 print(f"[WARN] Playwright fetch failed on attempt {attempt} for {url}: {exc}")
                 time.sleep(min(2 ** (attempt - 1), 8))
 
+        if isinstance(last_error, RateLimitError):
+            raise last_error
         raise RuntimeError(f"Failed to fetch {url}: {last_error}")
 
 
@@ -826,7 +1083,9 @@ def main() -> None:
     skipped_non_html = 0
     skipped_empty = 0
     skipped_filtered = 0
+    skipped_robots = 0
     failed = 0
+    rate_limit_hits = 0
 
     progress = tqdm(total=max_pages, desc="Pages saved")
     try:
@@ -841,6 +1100,11 @@ def main() -> None:
                     visited.add(task.url)
                     skipped_filtered += 1
                     continue
+                if not crawler.can_fetch_url(task.url):
+                    debug("Skipping robots-disallowed URL:", task.url)
+                    visited.add(task.url)
+                    skipped_robots += 1
+                    continue
 
                 try:
                     page = crawler.fetch_page(task.url)
@@ -848,6 +1112,16 @@ def main() -> None:
                     debug(exc)
                     visited.add(task.url)
                     skipped_non_html += 1
+                    continue
+                except RobotsDeniedError as exc:
+                    debug(exc)
+                    visited.add(task.url)
+                    skipped_robots += 1
+                    continue
+                except RateLimitError as exc:
+                    print(f"[WARN] {exc}")
+                    visited.add(task.url)
+                    failed += 1
                     continue
                 except PlaywrightError as exc:
                     print(f"[WARN] Playwright error for {task.url}: {exc}")
@@ -919,6 +1193,7 @@ def main() -> None:
                     queue.append(CrawlTask(url=candidate, depth=task.depth + 1, discovered_from=final_url))
                     scheduled.add(candidate)
                     accepted_links += 1
+            rate_limit_hits = crawler.rate_limit_hits
     finally:
         progress.close()
 
@@ -933,6 +1208,8 @@ def main() -> None:
     print(f"Skipped non-HTML: {skipped_non_html}")
     print(f"Skipped empty text: {skipped_empty}")
     print(f"Skipped filtered URLs: {skipped_filtered}")
+    print(f"Skipped by robots.txt: {skipped_robots}")
+    print(f"Rate limit responses seen: {rate_limit_hits}")
     print(f"Fetch failures: {failed}")
 
 
