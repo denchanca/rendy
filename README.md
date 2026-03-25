@@ -13,7 +13,7 @@ That matters because AI product work changes in layers. Frontend copy changes. P
 - same-origin proxy from the UI to the private `rendy-orchestration` service
 - managed Postgres provisioned and wired through the Blueprint
 - importable starter chatflows for ingestion and assistant behavior
-- ETL examples for JSON-to-Pinecone and sitemap-to-Pinecone ingestion
+- ETL examples for rendered crawl-to-JSON, JSON-to-Pinecone, and sitemap-to-Pinecone ingestion
 - a future-facing commented cron scaffold in [`render.yaml`](render.yaml) for scheduled ETL
 
 ## Why This Repo Is Render-Centric
@@ -150,10 +150,18 @@ Local development is still available, but it is secondary here. The Render deplo
 
 The current ETL examples are:
 
+- [`ETL/crawl-ETL/crawl_to_json.py`](ETL/crawl-ETL/crawl_to_json.py): Playwright-based crawler that executes client-side JavaScript and captures rendered DOM text plus inline/external JS and CSS into JSON/JSONL `{url, text}` records
 - [`ETL/json-ETL/json_to_pinecone.py`](ETL/json-ETL/json_to_pinecone.py): JSON/JSONL `{url, text}` ingestion into Pinecone with chunking, ledgers, and optional sync-delete
 - [`ETL/sitemap-ETL/sitemap.py`](ETL/sitemap-ETL/sitemap.py): Playwright-based sitemap fetcher that extracts `<loc>` URLs and embeds URL strings
 
 See [`ETL/README.md`](ETL/README.md) for ETL details.
+
+That gives you a practical ETL flow today:
+
+- crawl rendered pages into local JSON/JSONL
+- optionally reshape or review the dataset
+- ingest `{url, text}` records into Pinecone
+- or use sitemap-only discovery when you want URL coverage without full page-body capture
 
 The nice part from a Render perspective is that this does not need to stay manual forever. The Blueprint already includes a commented cron-job scaffold in [`render.yaml`](render.yaml) as a future direction. That keeps the repo "AI app first" today while still showing a clean path toward scheduled ingestion later.
 
@@ -171,7 +179,7 @@ The nice part from a Render perspective is that this does not need to stay manua
 - [`chatflows/`](chatflows): Flowise chatflow exports plus setup documentation for the current orchestration path
 - [`chatflows/README.md`](chatflows/README.md): quick reference for the included Flowise templates and how they fit together
 - [`chatflows/HOWTO.md`](chatflows/HOWTO.md): step-by-step guide for importing, configuring, and using the chatflow templates
-- [`ETL/`](ETL): JSON and sitemap ingestion helpers
+- [`ETL/`](ETL): rendered crawl, JSON ingestion, and sitemap ingestion helpers
 
 ## Official Documentation
 
